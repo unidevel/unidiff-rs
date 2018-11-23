@@ -1,0 +1,13 @@
+var ALIASES = {};
+ALIASES['aho_corasick'] = {};
+ALIASES['cfg_if'] = {};
+ALIASES['encoding_rs'] = {};
+ALIASES['lazy_static'] = {};
+ALIASES['libc'] = {};
+ALIASES['memchr'] = {};
+ALIASES['regex'] = {};
+ALIASES['regex_syntax'] = {};
+ALIASES['thread_local'] = {};
+ALIASES['ucd_util'] = {};
+ALIASES['unidiff'] = {};
+ALIASES['utf8_ranges'] = {};
