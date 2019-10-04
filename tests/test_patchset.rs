@@ -63,6 +63,8 @@ fn test_parse_git_diff() {
     assert_eq!("added_file", added_files[0].path());
     assert_eq!(4, added_files[0].added());
     assert_eq!(0, added_files[0].removed());
+    assert_eq!("0000000", added_files[0].from_index.as_ref().expect("found index"));
+    assert_eq!("9b710f3", added_files[0].to_index.as_ref().expect("found index"));
 
     let removed_files = patch.removed_files();
     assert_eq!(1, removed_files.len());

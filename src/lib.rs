@@ -37,6 +37,7 @@ use regex::Regex;
 lazy_static! {
     static ref RE_SOURCE_FILENAME: Regex = Regex::new(r"^--- (?P<filename>[^\t\n]+)(?:\t(?P<timestamp>[^\n]+))?").unwrap();
     static ref RE_TARGET_FILENAME: Regex = Regex::new(r"^\+\+\+ (?P<filename>[^\t\n]+)(?:\t(?P<timestamp>[^\n]+))?").unwrap();
+    static ref RE_GIT_INDEX: Regex = Regex::new(r"^index (?P<from_index>[0-9a-fA-F]+)\.\.(?P<to_index>[0-9a-fA-F]+)[^\n]*?").unwrap();
     static ref RE_HUNK_HEADER: Regex = Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@[ ]?(.*)").unwrap();
     static ref RE_HUNK_BODY_LINE: Regex = Regex::new(r"^(?P<line_type>[- \n\+\\]?)(?P<value>.*)").unwrap();
 }
@@ -59,12 +60,15 @@ pub enum Error {
     UnexpectedHunk(String),
     /// Hunk line expected
     ExpectLine(String),
+    /// Index without source
+    IndexWithoutSource(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::TargetWithoutSource(ref l) => write!(f, "Target without source: {}", l),
+            Error::IndexWithoutSource(ref l) => write!(f, "Index without source: {}", l),
             Error::UnexpectedHunk(ref l) => write!(f, "Unexpected hunk found: {}", l),
             Error::ExpectLine(ref l) => write!(f, "Hunk line expected: {}", l),
         }
@@ -75,6 +79,7 @@ impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::TargetWithoutSource(..) => "Target without source",
+            Error::IndexWithoutSource(..) => "Index without source",
             Error::UnexpectedHunk(..) => "Unexpected hunk found",
             Error::ExpectLine(..) => "Hunk line expected",
         }
@@ -277,6 +282,10 @@ pub struct PatchedFile {
     pub target_file: String,
     /// Target file timestamp
     pub target_timestamp: Option<String>,
+    /// From index
+    pub from_index: Option<String>,
+    /// To index
+    pub to_index: Option<String>,
     hunks: Vec<Hunk>,
 }
 
@@ -288,6 +297,8 @@ impl PatchedFile {
             target_file: target_file.into(),
             source_timestamp: None,
             target_timestamp: None,
+            from_index: None,
+            to_index: None,
             hunks: vec![],
         }
     }
@@ -299,6 +310,8 @@ impl PatchedFile {
             target_file: target_file.into(),
             source_timestamp: None,
             target_timestamp: None,
+            from_index: None,
+            to_index: None,
             hunks: hunks,
         }
     }
@@ -542,6 +555,7 @@ impl PatchSet {
     pub fn parse<T: AsRef<str>>(&mut self, input: T) -> Result<()> {
         let input = input.as_ref();
         let mut current_file: Option<PatchedFile> = None;
+        let mut current_index: (Option<String>, Option<String>) = (None, None);
         let diff: Vec<(usize, &str)> = input.split('\n').enumerate().collect();
         let mut source_file: Option<String> = None;
         let mut source_timestamp: Option<String> = None;
@@ -583,8 +597,26 @@ impl PatchSet {
                     target_file: target_file.clone().unwrap(),
                     source_timestamp: source_timestamp.clone(),
                     target_timestamp: target_timestamp.clone(),
+                    from_index: current_index.0.take(),
+                    to_index: current_index.1.take(),
                     hunks: vec![],
                 });
+                continue;
+            }
+            // check for git index
+            if let Some(captures) = RE_GIT_INDEX.captures(line) {
+                if current_index.0.is_some() || current_index.1.is_some() {
+                    return Err(Error::IndexWithoutSource(line.to_owned()));
+                }
+                let from_index = match captures.name("from_index") {
+                    Some(ref index) => Some(index.as_str().to_owned()),
+                    None => None,
+                };
+                let to_index = match captures.name("to_index") {
+                    Some(ref index) => Some(index.as_str().to_owned()),
+                    None => None,
+                };
+                current_index = (from_index, to_index);
                 continue;
             }
             // check for hunk header
